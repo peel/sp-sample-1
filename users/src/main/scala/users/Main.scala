@@ -17,16 +17,18 @@ object Main extends IOApp {
     ),
     services = ServicesConfig(
       users = ServicesConfig.UsersConfig(
-        failureProbability = 0.1,
-        timeoutProbability = 0.1
+        failureProbability = 0.0,
+        timeoutProbability = 0.0
       )
     ),
     http = HttpConfig(
       endpoint = HttpConfig.EndpointConfig(
         host = "localhost",
         port = 9999
-      ),
-      api = HttpConfig.ApiConfig(
+      )
+    ),
+    api = ApiConfig(
+      format = ApiConfig.FormatConfig(
         version = "v1"
       )
     )

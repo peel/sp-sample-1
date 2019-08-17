@@ -6,7 +6,7 @@ Http4s falls in nicely with monadic approach of Grafter
 (which I haven't worked with and still am on a fence with its design choices).
 This allows to keep the matters isolated and highly scalable, contained and fairly simple.
 Due to time restrictions some corners have been cut, mostly:
-- authentication/authorization is not implemnted (hints on ~AuthMiddleware~ below)
+- authentication/authorization is not implemented (hints on ~AuthMiddleware~ below)
 - content negotiation as a better way of versioning and response structuring (hinted within ~Versioning~ section)
 - http routes structure within a single ~Http~ module could be expanded into separate modules fetched via ~Reader~ monad
 - effect type of ~cats.effect.IO~ should ba parameterised within ~Http~ module
@@ -38,16 +38,35 @@ and share the error handling among them.
 The endpoints are separated as if they are to be exposed through separate
 pipelines using Http4s' ~AuthMiddleware~ which allows for access restrictions
 for specific parts of the API.
-Some of the endpoints that are otherwise duplicates of admin-like functionality, could be
-exposed to end-users could be piped through lens so only part of the object is serialized. 
+Some of the endpoints that would be otherwise duplicates of admin-like functionality, could be
+exposed to end-users could be piped through lens so only part of the object is serialized.
 This could be easily doable ~Content-Type~ negotiation and vendor-specific content types. 
 This would keep the codebase coincise and allow for code sharing whereas only
-the needed components are pushed over the wire, for instance:
+the needed components are pushed over the wire, ie password is not sent through public/user endpoints.
+It can be discussed whether it should be available within admin API, but keeping it to prove the
+purpose.
+For now the duplicates that only change the response structure are not duplicated due to time constraints.
+Moreover, for better concern separation it might be beneficial to provide an option to separately host both
+enduser and internal api, much like following run method that exposes two separately-configured APIs.
 
-Admin interface version of the ~User~:
-#+BEGIN_SRC json
+#+BEGIN_SRC scala
+    val public = Application.fromApplicationConfig
+       .run(config)
+       .http
+       .stream
+
+    val admin = Application.fromApplicationConfig
+       .run(configAdmin)
+       .http
+       .stream
+
+    public
+      .concurrently(admin)
+      .compile
+      .drain
+      .as(ExitCode.Success)
 #+END_SRC
-Could easily become
-#+BEGIN_SRC json
-#+END_SRC
-that removes the sensitive data from the response.
+
+** Consistency
+In order to achieve HTTP code reason and consistency, given the time bounds, some inconsistency is introduced
+in ~Http~ module. This can be further ironed out on a longer time span.

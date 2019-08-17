@@ -5,7 +5,8 @@ import cats.data._
 case class ApplicationConfig(
     executors: ExecutorsConfig,
     services: ServicesConfig,
-    http: HttpConfig
+    http: HttpConfig,
+    api: ApiConfig
 )
 
 case class ExecutorsConfig(
@@ -36,8 +37,7 @@ object ServicesConfig {
 }
 
 case class HttpConfig(
-    endpoint: HttpConfig.EndpointConfig,
-    api: HttpConfig.ApiConfig
+    endpoint: HttpConfig.EndpointConfig
 )
 
 object HttpConfig {
@@ -48,7 +48,17 @@ object HttpConfig {
       host: String,
       port: Int
   )
-  case class ApiConfig(
+}
+
+case class ApiConfig(
+    format: ApiConfig.FormatConfig
+)
+
+object ApiConfig {
+  val fromApplicationConfig: Reader[ApplicationConfig, ApiConfig] =
+    Reader(_.api)
+
+  case class FormatConfig(
       version: String
   )
 }

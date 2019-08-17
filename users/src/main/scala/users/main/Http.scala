@@ -17,6 +17,7 @@ import org.http4s.server.blaze._
 import users.services.usermanagement.Error
 import users.config._
 import users.domain._
+import Http._
 
 object Http {
   val reader: Reader[(HttpConfig, Services), Http] =
@@ -34,12 +35,37 @@ object Http {
   implicit val createUserDecoder = jsonOf[IO, CreateUser]
   implicit val emailAddressDecoder = jsonOf[IO, EmailAddress]
   implicit val passwordDecoder = jsonOf[IO, Password]
-  implicit val statusChangeDecoder = jsonOf[IO, StatusChange]
 
   object UserIdVar {
     def unapply(str: String): Option[User.Id] = User.Id(str).some
   }
   object OptionalPasswordResetParam extends OptionalQueryParamDecoderMatcher[Boolean]("reset")
+
+}
+
+case class Http(
+    config: HttpConfig,
+    services: Services
+) extends PublicRoutes
+    with UserRoutes
+    with AdminRoutes {
+  import services._
+
+  implicit val ec = executors.serviceExecutor
+
+  def stream(implicit t: Timer[IO], m: ConcurrentEffect[IO]) =
+    BlazeServerBuilder[IO]
+      .bindHttp(config.endpoint.port, config.endpoint.host)
+      .withHttpApp(routes)
+      .serve
+
+  private val routes = (publicRoutes <+> userRoutes <+> adminRoutes).orNotFound
+}
+
+sealed trait Routes {
+  val config: HttpConfig
+  val services: Services
+  val ApiVersion = config.api.version
 
   def errorCode(err: Error) = err match {
     case Error.Exists             => Conflict("User already exists")
@@ -54,27 +80,22 @@ object Http {
     case Right(a)  => Ok(a.asJson)
     case Left(err) => errorCode(err)
   }
+
+  def withIO[A](f: => scala.concurrent.Future[Either[Error, A]]): IO[Either[Error, A]] = IO.fromFuture(IO(f))
+  def handle[A](io: IO[Either[Error, A]])(implicit ec: Encoder[A]): IO[Response[IO]] = io.flatMap(respond(_))
+  def handle[A](f: => scala.concurrent.Future[Either[Error, A]])(implicit ec: Encoder[A]): IO[Response[IO]] =
+    handle(withIO(f))
+
 }
 
-case class Http(
-    config: HttpConfig,
-    services: Services
-) {
+object PublicRoutes {
+  import io.circe.generic.semiauto._
+  implicit val userEncoder: Encoder[User] = deriveEncoder[User].mapJsonObject(_.remove("metadata").remove("password"))
+}
+trait PublicRoutes extends Routes {
   import services._
-  import Http._
 
-  implicit val ec = executors.serviceExecutor
-  val ApiVersion = config.api.version
-
-  def stream(implicit t: Timer[IO], m: ConcurrentEffect[IO]) =
-    BlazeServerBuilder[IO]
-      .bindHttp(config.endpoint.port, config.endpoint.host)
-      .withHttpApp(routes)
-      .serve
-
-  private def routes = (publicRoutes <+> userRoutes <+> adminRoutes).orNotFound
-
-  private def publicRoutes =
+  val publicRoutes =
     HttpRoutes
       .of[IO] {
         case req @ POST -> Root / ApiVersion / "users" =>
@@ -82,11 +103,16 @@ case class Http(
             for {
               create  <- req.as[CreateUser]
               account <- withIO(userManagement.signUp(create.userName, create.emailAddress, create.password.some))
-            } yield account
+            } yield account // Created
           }
       }
+}
 
-  private def userRoutes =
+trait UserRoutes extends Routes {
+  import services._
+  import PublicRoutes._
+
+  val userRoutes =
     HttpRoutes
       .of[IO] {
         case GET -> Root / ApiVersion / "users" / UserIdVar(id) =>
@@ -94,15 +120,15 @@ case class Http(
             userManagement.get(id)
           }
         case DELETE -> Root / ApiVersion / "users" / UserIdVar(id) =>
-          handle {
-            userManagement.delete(id).map(_.flatMap(_ => Left(Error.Deleted)))
+          handle[User] {
+            userManagement.delete(id).map(_.flatMap(_ => Left(Error.Deleted))) //success: NoContent
           }
         case req @ PUT -> Root / ApiVersion / "users" / UserIdVar(id) / "email" =>
           handle {
             for {
               email   <- req.as[EmailAddress]
               updated <- withIO(userManagement.updateEmail(id, email))
-            } yield updated
+            } yield updated // success: OK
           }
         case req @ PUT -> Root / ApiVersion / "users" / UserIdVar(id) / "password" :? OptionalPasswordResetParam(
               maybeReset
@@ -119,8 +145,16 @@ case class Http(
             }
           }
       }
+}
 
-  private def adminRoutes =
+object AdminRoutes {
+  implicit val statusChangeDecoder = jsonOf[IO, StatusChange]
+}
+trait AdminRoutes extends Routes {
+  import services._
+  import AdminRoutes._
+
+  val adminRoutes =
     HttpRoutes
       .of[IO] {
         case GET -> Root / ApiVersion / "users" =>
@@ -132,19 +166,13 @@ case class Http(
             (for {
               update <- req.as[StatusChange]
               user   <- withIO(userManagement.get(id))
-            } yield user) flatMap {
-              case Right(user) if user.isActive =>
+            } yield (update, user)) flatMap {
+              case (StatusChange(User.Status.Active), Right(user)) if user.isBlocked =>
                 withIO(userManagement.block(id))
-              case Right(user) if user.isBlocked =>
+              case (StatusChange(User.Status.Blocked), Right(user)) if user.isActive =>
                 withIO(userManagement.unblock(id))
-              case u => IO.pure(u)
+              case (_, user) => IO.pure(user) // NotModified
             }
           }
       }
-
-  private def withIO[A](f: => scala.concurrent.Future[Either[Error, A]]): IO[Either[Error, A]] = IO.fromFuture(IO(f))
-  private def handle[A](io: IO[Either[Error, A]])(implicit ec: Encoder[A]): IO[Response[IO]] = io.flatMap(respond(_))
-  private def handle[A](f: => scala.concurrent.Future[Either[Error, A]])(implicit ec: Encoder[A]): IO[Response[IO]] =
-    handle(withIO(f))
-
 }

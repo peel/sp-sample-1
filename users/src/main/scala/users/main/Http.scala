@@ -73,19 +73,18 @@ sealed trait Routes {
     case Error.Active             => Conflict("User already active")
     case Error.Deleted            => Gone("User already deleted")
     case Error.Blocked            => Conflict("User already blocked")
+    case Error.NotModified        => Conflict("Unable to modify user")
     case Error.System(underlying) => InternalServerError(underlying.getMessage())
   }
 
+  def handle[A](f: => scala.concurrent.Future[Either[Error, A]])(implicit ec: Encoder[A]): IO[Response[IO]] =
+    handle(withIO(f))
+  def handle[A](io: IO[Either[Error, A]])(implicit ec: Encoder[A]): IO[Response[IO]] = io.flatMap(respond(_))
+  def withIO[A](f: => scala.concurrent.Future[Either[Error, A]]): IO[Either[Error, A]] = IO.fromFuture(IO(f))
   def respond[A, B](res: Either[Error, A])(implicit encoder: Encoder[A]) = res match {
     case Right(a)  => Ok(a.asJson)
     case Left(err) => errorCode(err)
   }
-
-  def withIO[A](f: => scala.concurrent.Future[Either[Error, A]]): IO[Either[Error, A]] = IO.fromFuture(IO(f))
-  def handle[A](io: IO[Either[Error, A]])(implicit ec: Encoder[A]): IO[Response[IO]] = io.flatMap(respond(_))
-  def handle[A](f: => scala.concurrent.Future[Either[Error, A]])(implicit ec: Encoder[A]): IO[Response[IO]] =
-    handle(withIO(f))
-
 }
 
 object PublicRoutes {
@@ -99,11 +98,12 @@ trait PublicRoutes extends Routes {
     HttpRoutes
       .of[IO] {
         case req @ POST -> Root / ApiVersion / "users" =>
-          handle {
-            for {
-              create  <- req.as[CreateUser]
-              account <- withIO(userManagement.signUp(create.userName, create.emailAddress, create.password.some))
-            } yield account // Created
+          (for {
+            create  <- req.as[CreateUser]
+            account <- withIO(userManagement.signUp(create.userName, create.emailAddress, create.password.some))
+          } yield account) flatMap {
+            case Right(user) => Created(user.asJson)
+            case Left(err)   => errorCode(err)
           }
       }
 }
@@ -120,15 +120,18 @@ trait UserRoutes extends Routes {
             userManagement.get(id)
           }
         case DELETE -> Root / ApiVersion / "users" / UserIdVar(id) =>
-          handle[User] {
-            userManagement.delete(id).map(_.flatMap(_ => Left(Error.Deleted))) //success: NoContent
+          withIO {
+            userManagement.delete(id)
+          } flatMap {
+            case Right(_)  => Gone()
+            case Left(err) => errorCode(err)
           }
         case req @ PUT -> Root / ApiVersion / "users" / UserIdVar(id) / "email" =>
           handle {
             for {
               email   <- req.as[EmailAddress]
               updated <- withIO(userManagement.updateEmail(id, email))
-            } yield updated // success: OK
+            } yield updated
           }
         case req @ PUT -> Root / ApiVersion / "users" / UserIdVar(id) / "password" :? OptionalPasswordResetParam(
               maybeReset
@@ -171,7 +174,7 @@ trait AdminRoutes extends Routes {
                 withIO(userManagement.block(id))
               case (StatusChange(User.Status.Blocked), Right(user)) if user.isActive =>
                 withIO(userManagement.unblock(id))
-              case (_, user) => IO.pure(user) // NotModified
+              case (_, _) => IO.pure(Left(Error.NotModified))
             }
           }
       }

@@ -4,7 +4,8 @@ import cats.data._
 
 case class ApplicationConfig(
     executors: ExecutorsConfig,
-    services: ServicesConfig
+    services: ServicesConfig,
+    http: HttpConfig
 )
 
 case class ExecutorsConfig(
@@ -31,5 +32,19 @@ object ServicesConfig {
   case class UsersConfig(
       failureProbability: Double,
       timeoutProbability: Double
+  )
+}
+
+case class HttpConfig(
+    endpoint: HttpConfig.EndpointConfig
+)
+
+object HttpConfig {
+  val fromApplicationConfig: Reader[ApplicationConfig, HttpConfig] =
+    Reader(_.http)
+
+  case class EndpointConfig(
+      host: String = "localhost",
+      port: Int = 9999
   )
 }

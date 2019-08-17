@@ -25,6 +25,9 @@ object Main extends IOApp {
       endpoint = HttpConfig.EndpointConfig(
         host = "localhost",
         port = 9999
+      ),
+      api = HttpConfig.ApiConfig(
+        version = "v1"
       )
     )
   )

@@ -36,7 +36,8 @@ object ServicesConfig {
 }
 
 case class HttpConfig(
-    endpoint: HttpConfig.EndpointConfig
+    endpoint: HttpConfig.EndpointConfig,
+    api: HttpConfig.ApiConfig
 )
 
 object HttpConfig {
@@ -44,7 +45,10 @@ object HttpConfig {
     Reader(_.http)
 
   case class EndpointConfig(
-      host: String = "localhost",
-      port: Int = 9999
+      host: String,
+      port: Int
+  )
+  case class ApiConfig(
+      version: String
   )
 }

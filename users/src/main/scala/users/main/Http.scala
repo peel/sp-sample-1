@@ -64,6 +64,7 @@ case class Http(
   import Http._
 
   implicit val ec = executors.serviceExecutor
+  val ApiVersion = config.api.version
 
   def stream(implicit t: Timer[IO], m: ConcurrentEffect[IO]) =
     BlazeServerBuilder[IO]
@@ -76,7 +77,7 @@ case class Http(
   private def publicRoutes =
     HttpRoutes
       .of[IO] {
-        case req @ POST -> Root / "users" =>
+        case req @ POST -> Root / ApiVersion / "users" =>
           handle {
             for {
               create  <- req.as[CreateUser]
@@ -88,22 +89,24 @@ case class Http(
   private def userRoutes =
     HttpRoutes
       .of[IO] {
-        case GET -> Root / "users" / UserIdVar(id) =>
+        case GET -> Root / ApiVersion / "users" / UserIdVar(id) =>
           handle {
             userManagement.get(id)
           }
-        case DELETE -> Root / "users" / UserIdVar(id) =>
+        case DELETE -> Root / ApiVersion / "users" / UserIdVar(id) =>
           handle {
             userManagement.delete(id).map(_.flatMap(_ => Left(Error.Deleted)))
           }
-        case req @ PUT -> Root / "users" / UserIdVar(id) / "email" =>
+        case req @ PUT -> Root / ApiVersion / "users" / UserIdVar(id) / "email" =>
           handle {
             for {
               email   <- req.as[EmailAddress]
               updated <- withIO(userManagement.updateEmail(id, email))
             } yield updated
           }
-        case req @ PUT -> Root / "users" / UserIdVar(id) / "password" :? OptionalPasswordResetParam(maybeReset) =>
+        case req @ PUT -> Root / ApiVersion / "users" / UserIdVar(id) / "password" :? OptionalPasswordResetParam(
+              maybeReset
+            ) =>
           handle {
             maybeReset match {
               case None =>
@@ -120,11 +123,11 @@ case class Http(
   private def adminRoutes =
     HttpRoutes
       .of[IO] {
-        case GET -> Root / "users" =>
+        case GET -> Root / ApiVersion / "users" =>
           handle {
             userManagement.all()
           }
-        case req @ PUT -> Root / "admin" / "users" / UserIdVar(id) / "status" =>
+        case req @ PUT -> Root / ApiVersion / "admin" / "users" / UserIdVar(id) / "status" =>
           handle {
             (for {
               update <- req.as[StatusChange]

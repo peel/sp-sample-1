@@ -14,11 +14,9 @@ import org.http4s.dsl.io._
 import org.http4s.implicits._
 import org.http4s.server.blaze._
 
+import users.services.usermanagement.Error
 import users.config._
 import users.domain._
-
-case class CreateUser(userName: UserName, emailAddress: EmailAddress, password: Password)
-case class StatusChange(value: User.Status)
 
 object Http {
   val reader: Reader[(HttpConfig, Services), Http] =
@@ -26,9 +24,12 @@ object Http {
 
   val fromApplicationConfig: Reader[ApplicationConfig, Http] =
     (for {
-      config <- HttpConfig.fromApplicationConfig
+      config   <- HttpConfig.fromApplicationConfig
       services <- Services.fromApplicationConfig
     } yield (config, services)) andThen reader
+
+  case class CreateUser(userName: UserName, emailAddress: EmailAddress, password: Password)
+  case class StatusChange(value: User.Status)
 
   implicit val createUserDecoder = jsonOf[IO, CreateUser]
   implicit val emailAddressDecoder = jsonOf[IO, EmailAddress]
@@ -40,7 +41,6 @@ object Http {
   }
   object OptionalPasswordResetParam extends OptionalQueryParamDecoderMatcher[Boolean]("reset")
 
-  import users.services.usermanagement.Error
   def errorCode(err: Error) = err match {
     case Error.Exists             => Conflict("User already exists")
     case Error.NotFound           => NotFound("User not found")
@@ -48,6 +48,11 @@ object Http {
     case Error.Deleted            => Gone("User already deleted")
     case Error.Blocked            => Conflict("User already blocked")
     case Error.System(underlying) => InternalServerError(underlying.getMessage())
+  }
+
+  def respond[A, B](res: Either[Error, A])(implicit encoder: Encoder[A]) = res match {
+    case Right(a)  => Ok(a.asJson)
+    case Left(err) => errorCode(err)
   }
 }
 
@@ -60,89 +65,83 @@ case class Http(
 
   implicit val ec = executors.serviceExecutor
 
+  def stream(implicit t: Timer[IO], m: ConcurrentEffect[IO]) =
+    BlazeServerBuilder[IO]
+      .bindHttp(config.endpoint.port, config.endpoint.host)
+      .withHttpApp(routes)
+      .serve
+
+  private def routes = (publicRoutes <+> userRoutes <+> adminRoutes).orNotFound
+
   private def publicRoutes =
     HttpRoutes
       .of[IO] {
         case req @ POST -> Root / "users" =>
-          (for {
-            create <- req.as[CreateUser]
-            account <- IO.fromFuture(
-              IO(userManagement.signUp(create.userName, create.emailAddress, create.password.some))
-            )
-          } yield account) flatMap {
-            case Right(res) => Ok(res.asJson)
-            case Left(err)  => errorCode(err)
+          handle {
+            for {
+              create  <- req.as[CreateUser]
+              account <- withIO(userManagement.signUp(create.userName, create.emailAddress, create.password.some))
+            } yield account
           }
       }
-      .orNotFound
 
   private def userRoutes =
     HttpRoutes
       .of[IO] {
         case GET -> Root / "users" / UserIdVar(id) =>
-          IO.fromFuture(IO(userManagement.get(id))) flatMap {
-            case Right(res) => Ok(res.asJson)
-            case Left(err)  => errorCode(err)
+          handle {
+            userManagement.get(id)
           }
         case DELETE -> Root / "users" / UserIdVar(id) =>
-          IO.fromFuture(IO(userManagement.delete(id))) flatMap {
-            case Right(res) => Gone()
-            case Left(err)  => errorCode(err)
+          handle {
+            userManagement.delete(id).map(_.flatMap(_ => Left(Error.Deleted)))
           }
         case req @ PUT -> Root / "users" / UserIdVar(id) / "email" =>
-          (for {
-            email <- req.as[EmailAddress]
-            updated <- IO.fromFuture(IO(userManagement.updateEmail(id, email)))
-          } yield updated) flatMap {
-            case Right(res) => Ok(res.asJson)
-            case Left(err)  => errorCode(err)
+          handle {
+            for {
+              email   <- req.as[EmailAddress]
+              updated <- withIO(userManagement.updateEmail(id, email))
+            } yield updated
           }
         case req @ PUT -> Root / "users" / UserIdVar(id) / "password" :? OptionalPasswordResetParam(maybeReset) =>
-          (maybeReset match {
-            case None =>
-              for {
-                password <- req.as[Password]
-                user <- IO.fromFuture(IO(userManagement.updatePassword(id, password)))
-              } yield user
-            case Some(_) =>
-              IO.fromFuture(IO(userManagement.resetPassword(id)))
-          }) flatMap {
-            case Right(res) => Ok(res.asJson)
-            case Left(err)  => errorCode(err)
+          handle {
+            maybeReset match {
+              case None =>
+                for {
+                  password <- req.as[Password]
+                  user     <- withIO(userManagement.updatePassword(id, password))
+                } yield user
+              case Some(_) =>
+                withIO(userManagement.resetPassword(id))
+            }
           }
       }
-      .orNotFound
 
   private def adminRoutes =
     HttpRoutes
       .of[IO] {
         case GET -> Root / "users" =>
-          IO.fromFuture(IO(userManagement.all())).flatMap {
-            case Right(res) => Ok(res.asJson)
-            case Left(err)  => errorCode(err)
+          handle {
+            userManagement.all()
           }
         case req @ PUT -> Root / "admin" / "users" / UserIdVar(id) / "status" =>
-          (for {
-            update <- req.as[StatusChange]
-            user <- IO.fromFuture(IO(userManagement.get(id)))
-          } yield user) flatMap {
-            case Right(user) if user.isActive =>
-              IO.fromFuture(IO(userManagement.block(id)))
-            case Right(user) if user.isBlocked =>
-              IO.fromFuture(IO(userManagement.unblock(id)))
-            case u => IO.pure(u)
-          } flatMap {
-            case Right(res) => Ok(res.asJson)
-            case Left(err)  => errorCode(err)
+          handle {
+            (for {
+              update <- req.as[StatusChange]
+              user   <- withIO(userManagement.get(id))
+            } yield user) flatMap {
+              case Right(user) if user.isActive =>
+                withIO(userManagement.block(id))
+              case Right(user) if user.isBlocked =>
+                withIO(userManagement.unblock(id))
+              case u => IO.pure(u)
+            }
           }
       }
-      .orNotFound
 
-  def stream(implicit t: Timer[IO], m: ConcurrentEffect[IO]) =
-    BlazeServerBuilder[IO]
-      .bindHttp(config.endpoint.port, config.endpoint.host)
-      .withHttpApp(publicRoutes)
-      .withHttpApp(userRoutes) // needs AuthMiddleware
-      .withHttpApp(adminRoutes) // needs AuthMiddleware + special role
-      .serve
+  private def withIO[A](f: => scala.concurrent.Future[Either[Error, A]]): IO[Either[Error, A]] = IO.fromFuture(IO(f))
+  private def handle[A](io: IO[Either[Error, A]])(implicit ec: Encoder[A]): IO[Response[IO]] = io.flatMap(respond(_))
+  private def handle[A](f: => scala.concurrent.Future[Either[Error, A]])(implicit ec: Encoder[A]): IO[Response[IO]] =
+    handle(withIO(f))
+
 }

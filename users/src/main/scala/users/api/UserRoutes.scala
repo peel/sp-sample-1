@@ -3,7 +3,6 @@ package users.api
 import cats.data._
 import cats.effect._
 
-
 import org.http4s._
 import org.http4s.dsl.io._
 

@@ -3,7 +3,6 @@ package users.api
 import cats.data._
 import cats.implicits._
 
-
 import org.http4s.implicits._
 
 import users.config._

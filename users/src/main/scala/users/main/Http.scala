@@ -6,7 +6,6 @@ import scala.language.postfixOps
 import cats.data._
 import cats.effect._
 
-
 import org.http4s.server.blaze._
 
 import users.config._

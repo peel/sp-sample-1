@@ -12,14 +12,11 @@ import io.circe.syntax._
 import org.http4s._
 import org.http4s.circe._
 import org.http4s.dsl.io._
-import org.http4s.implicits._
-import org.http4s.server.blaze._
 
 import users.main.Services
 import users.services.usermanagement.Error
 import users.config._
 import users.domain._
-import users.api._
 
 sealed trait StatusChange
 case object Block extends StatusChange

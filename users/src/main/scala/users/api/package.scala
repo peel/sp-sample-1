@@ -1,6 +1,5 @@
 package users
 
-import cats.data._
 import cats.effect._
 import cats.implicits._
 
@@ -11,12 +10,8 @@ import io.circe.syntax._
 import org.http4s._
 import org.http4s.circe._
 import org.http4s.dsl.io._
-import org.http4s.implicits._
-import org.http4s.server.blaze._
 
-import users.main.Services
 import users.services.usermanagement.Error
-import users.config._
 import users.domain._
 import scala.concurrent.Future
 

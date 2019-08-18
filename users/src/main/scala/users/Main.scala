@@ -1,6 +1,5 @@
 package users
 
-import cats.data._
 import cats.implicits._
 import cats.effect._
 

@@ -9,7 +9,8 @@ scalacOptions ++= Seq(
   "-feature",
   "-language:existentials",
   "-language:higherKinds",
-  "-Ypartial-unification"
+  "-Ypartial-unification",
+  "-Ywarn-unused"
 )
 
 resolvers +=

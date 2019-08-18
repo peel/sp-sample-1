@@ -20,7 +20,7 @@ PUT http://localhost:9999/v1/users/fe148350-2d13-4e82-8746-db92c3797b4f/email
 {"value": "new@email.com"}
 
 # update password
-PUT http://localhost:9999/v1/users/fe148350-2d13-4e82-8746-db92c3797b4f/password?reset=true
+PUT http://localhost:9999/v1/users/8e69400e-85ff-478b-bb10-3a22067ce544/password?reset=true
 
 {"value": "new-pass"}
 

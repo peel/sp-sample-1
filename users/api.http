@@ -1,0 +1,54 @@
+### ENDUSER
+# create user
+POST http://localhost:9999/v1/users
+Content-Type: application/json
+
+{
+  "userName": {"value": "aaa"},
+  "emailAddress": {"value": "lorem@ipsum.com"},
+  "password": {"value": "loremipsum"}
+}
+
+# find by id
+GET http://localhost:9999/v1/users/940a2951-7593-4760-8138-75c869a164cb
+Content-Type: application/json
+
+
+# update email
+PUT http://localhost:9999/v1/users/fe148350-2d13-4e82-8746-db92c3797b4f/email
+
+{"value": "new@email.com"}
+
+# update password
+PUT http://localhost:9999/v1/users/fe148350-2d13-4e82-8746-db92c3797b4f/password?reset=true
+
+{"value": "new-pass"}
+
+# reset password
+PUT http://localhost:9999/v1/users/fe148350-2d13-4e82-8746-db92c3797b4f/password?reset=true
+
+### ADMIN
+# create user
+POST http://localhost:9999/v1/admin/users
+Content-Type: application/json
+
+{
+  "userName": {"value": "aaa"},
+  "emailAddress": {"value": "lorem@ipsum.com"},
+  "password": {"value": "loremipsum"}
+}
+
+# list users
+GET http://localhost:9999/v1/admin/users
+Content-Type: application/json
+
+# find by id
+GET http://localhost:9999/v1/admin/users/fe148350-2d13-4e82-8746-db92c3797b4f
+Content-Type: application/json
+
+
+# update status
+PUT http://localhost:9999/v1/admin/users/fe148350-2d13-4e82-8746-db92c3797b4f/status
+Content-Type: application/json
+
+{"value": "Block"}

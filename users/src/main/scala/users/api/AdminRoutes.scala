@@ -6,6 +6,7 @@ import cats.implicits._
 
 import io.circe._
 import io.circe.generic.auto._
+import io.circe.generic.extras.semiauto.deriveEnumerationDecoder
 import io.circe.syntax._
 
 import org.http4s._
@@ -20,6 +21,12 @@ import users.config._
 import users.domain._
 import users.api._
 
+sealed trait StatusChange
+case object Block extends StatusChange
+case object Unblock extends StatusChange
+
+case class StatusChangeRequest(value: StatusChange)
+
 object AdminService {
   val reader: Reader[(ApiConfig, Services), AdminService] =
     Reader((AdminService.apply _).tupled)
@@ -30,9 +37,8 @@ object AdminService {
       services <- Services.fromApplicationConfig
     } yield (config, services)) andThen reader
 
-  import io.circe.generic.semiauto._
-  implicit val statusChangeDecoder = jsonOf[IO, StatusChange]
-  implicit val adminUserEncoder: Encoder[User] = deriveEncoder[User]
+  implicit val statusChangeDecoder = deriveEnumerationDecoder[StatusChange]
+  implicit val statusChangeRequestDecoder = jsonOf[IO, StatusChangeRequest]
 }
 
 case class AdminService(config: ApiConfig, services: Services) {
@@ -53,19 +59,6 @@ case class AdminService(config: ApiConfig, services: Services) {
           } yield account) flatMap {
             case Right(user) => Created(user.asJson)
             case Left(err)   => errorCode(err)
-          }
-        case req @ PUT -> Root / config.format.version / "admin" / "users" / UserIdVar(id) / "status" =>
-          handle {
-            (for {
-              update <- req.as[StatusChange]
-              user   <- withIO(userManagement.get(id))
-            } yield (update, user)) flatMap {
-              case (StatusChange(User.Status.Active), Right(user)) if user.isBlocked =>
-                withIO(userManagement.block(id))
-              case (StatusChange(User.Status.Blocked), Right(user)) if user.isActive =>
-                withIO(userManagement.unblock(id))
-              case (_, _) => IO.pure(Left(Error.NotModified))
-            }
           }
         case GET -> Root / config.format.version / "admin" / "users" / UserIdVar(id) =>
           handle {
@@ -97,6 +90,19 @@ case class AdminService(config: ApiConfig, services: Services) {
                 } yield user
               case Some(_) =>
                 withIO(userManagement.resetPassword(id))
+            }
+          }
+        case req @ PUT -> Root / config.format.version / "admin" / "users" / UserIdVar(id) / "status" =>
+          handle {
+            (for {
+              update <- req.as[StatusChangeRequest]
+              user   <- withIO(userManagement.get(id))
+            } yield (update, user)) flatMap {
+              case (StatusChangeRequest(Block), Right(user)) if user.isActive =>
+                withIO(userManagement.block(id))
+              case (StatusChangeRequest(Unblock), Right(user)) if user.isBlocked =>
+                withIO(userManagement.unblock(id))
+              case (_, _) => IO.pure(Left(Error.NotModified))
             }
           }
       }

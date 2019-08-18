@@ -42,7 +42,6 @@ package object api {
   }
 
   case class CreateUser(userName: UserName, emailAddress: EmailAddress, password: Password)
-  case class StatusChange(value: User.Status)
 
   implicit val createUserDecoder = jsonOf[IO, CreateUser]
   implicit val emailAddressDecoder = jsonOf[IO, EmailAddress]

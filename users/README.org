@@ -2,14 +2,14 @@
 
 ** Considerations and corners cut
 For excercise purposes I decided to choose Http4s as a familiar http server and DSL.
-Http4s falls in nicely with monadic approach of Grafter 
-(which I haven't worked with and still am on a fence with its design choices).
+Http4s falls in nicely with monadic approach of a ~Reader~ stack.
 This allows to keep the matters isolated and highly scalable, contained and fairly simple.
 Due to time restrictions some corners have been cut, mostly:
 - authentication/authorization is not implemented (hints on ~AuthMiddleware~ below)
 - content negotiation as a better way of versioning and response structuring (hinted within ~Versioning~ section)
-- http routes structure within a single ~Http~ module could be expanded into separate modules fetched via ~Reader~ monad
 - effect type of ~cats.effect.IO~ should ba parameterised within ~Http~ module
+- http routes structure within a single ~AdminService~ duplicate some of the ones available in other modules, this is easily fixable with parameterisation but I decided to skip it due to clocking time on the excercise
+- no specs 
 
 ** Versioning
 Versioning has been a common issue with REST-like APIs. 
@@ -68,5 +68,14 @@ enduser and internal api, much like following run method that exposes two separa
 #+END_SRC
 
 ** Consistency
-In order to achieve HTTP code reason and consistency, given the time bounds, some inconsistency is introduced
-in ~Http~ module. This can be further ironed out on a longer time span.
+The API is designed primarly from it's client perspective given two assumptions:
+1. for now no codec inlining is done, so fields like ~Password(value: String)~ become ~{"value": "password"}~ which could be changed with semiauto effort
+2. HTTP codes used through the API are a set of:
+- OK
+- Not Found
+- Internal Server Error
+- Unprocessable Entity - validation error
+- Gone - resource removed
+- Created
+- Not Modified
+3. sample calls available in restclient file (~api.http~)

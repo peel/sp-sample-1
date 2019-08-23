@@ -4,13 +4,13 @@ import cats.data._
 import users.config._
 
 object Application {
-  val reader: Reader[Services, Application] =
+  val reader: Reader[Http, Application] =
     Reader(Application.apply)
 
   val fromApplicationConfig: Reader[ApplicationConfig, Application] =
-    Services.fromApplicationConfig andThen reader
+    Http.fromApplicationConfig andThen reader
 }
 
 case class Application(
-    services: Services
+    http: Http
 )
